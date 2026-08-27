@@ -68,7 +68,7 @@ async function xls(){
     rows.push(rowXml([]));rows.push(rowXml([]));rows.push(rowXml(['','记得拍摄四个方向街景图片'],['','redBold']));rows.push(rowXml([]));rows.push(rowXml([]));
     (s.samples||[]).forEach(q=>{
       rows.push(rowXml(['样方编号：',q.code],['yellowRed','yellowRed']));
-      rows.push(rowXml(['序号','种名','平均高度（cm）','长*宽（cm)','盖度（%）','植物类型','生长状况'],Array(7).fill('head')));
+      rows.push(rowXml(['序号','种名','平均高度（cm）','长*宽（cm）','盖度（%）','植物类型','生长状况'],Array(7).fill('head')));
       (q.records||[]).forEach((z,i)=>rows.push(rowXml([i+1,z.plant,z.height,[z.length,z.width].filter(Boolean).join('*'),z.cover,z.type,z.growth],Array(7).fill('gray'))));
     });
     return `<Worksheet ss:Name="${esc(clean((s.code||'')+'样地'))}"><Table>${rows.join('')}</Table></Worksheet>`
@@ -77,4 +77,39 @@ async function xls(){
   await saveBlob(new Blob(['\ufeff',xml],{type:'application/vnd.ms-excel;charset=utf-8'}),`${x.date||'今日'}_网格${x.grid||'未编号'}_样方调查汇总.xls`)
 }
 document.getElementById('xlsx').onclick=xlsx;document.getElementById('xls').onclick=xls;
+
+// V4.2：在100×100cm样方中，可由盖度自动换算等效“长×宽”。
+function setupCoverAuto(){
+  const h1=document.querySelector('h1');if(h1)h1.textContent='🌿 植物样方语音记录器 V4.2';
+  const pl=document.getElementById('pl'),pw=document.getElementById('pw'),pc=document.getElementById('pc');
+  if(!pl||!pw||!pc)return;
+  const lbox=pl.closest('div'),wbox=pw.closest('div'),parent=lbox?.parentElement;
+  if(!lbox||!wbox||!parent)return;
+  const box=document.createElement('div');box.innerHTML='<label>长×宽（cm）</label><input id="pdims" inputmode="decimal" placeholder="例如 80×100"><div class="status" style="margin-top:3px">未填写长宽时，按100×100cm样方由盖度自动换算</div>';
+  parent.insertBefore(box,lbox);lbox.style.display='none';wbox.style.display='none';
+  const pd=document.getElementById('pdims');let lastCover='',lastLW='';
+  function validCover(){const v=parseFloat(pc.value);return Number.isFinite(v)&&v>=0&&v<=100?v:null}
+  function writeAuto(){const c=validCover();if(c===null)return false;pl.value=String(c);pw.value='100';pd.value=`${c}×100`;pd.dataset.auto='1';return true}
+  function sync(){
+    const c=validCover(),lw=`${pl.value}|${pw.value}`;
+    if(!pc.value&&!pl.value&&!pw.value){pd.value='';pd.dataset.auto='0';lastCover='';lastLW='';return}
+    if(pd.dataset.auto==='1'){
+      if(c!==null&&(String(c)!==pl.value||pw.value!=='100'))writeAuto();
+      else if(c===null){pd.value='';pd.dataset.auto='0'}
+    }else if(pl.value&&pw.value){pd.value=`${pl.value}×${pw.value}`}
+    else if(c!==null){writeAuto()}
+    lastCover=pc.value;lastLW=lw;
+  }
+  pd.addEventListener('input',()=>{
+    const v=pd.value.trim();if(!v){pl.value='';pw.value='';pd.dataset.auto='0';return}
+    const m=v.match(/^\s*(\d+(?:\.\d+)?)\s*(?:×|\*|x|X|乘)\s*(\d+(?:\.\d+)?)\s*$/);
+    if(m){pl.value=m[1];pw.value=m[2];pd.dataset.auto='0'}
+  });
+  pc.addEventListener('input',()=>{if(pd.dataset.auto==='1'||(!pl.value&&!pw.value))writeAuto()});
+  pc.addEventListener('change',()=>{if(pd.dataset.auto==='1'||(!pl.value&&!pw.value))writeAuto()});
+  pl.addEventListener('input',()=>{pd.dataset.auto='0';sync()});pw.addEventListener('input',()=>{pd.dataset.auto='0';sync()});
+  setInterval(()=>{const lw=`${pl.value}|${pw.value}`;if(pc.value!==lastCover||lw!==lastLW)sync()},350);
+  sync();
+}
+setupCoverAuto();
 })();
